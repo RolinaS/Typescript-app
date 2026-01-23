@@ -1,6 +1,4 @@
-export const getHealthStatus = () => {
-  return {
-    status: "ok",
-    timestamp: new Date().toISOString()
-  };
-};
+export const getHealthStatus = () => ({
+  status: "ok",
+  timestamp: new Date().toISOString(),
+});
