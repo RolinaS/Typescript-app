@@ -52,6 +52,16 @@ export default function PortfolioPage() {
 
   const [msg, setMsg] = useState<string | null>(null);
 
+  async function fetchLots(holdingId: string) {
+  const res = await fetch(`/api/portfolio/${holdingId}/lots`, { cache: "no-store" });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data?.error ?? "Erreur lots");
+
+  setLots((p) => ({ ...p, [holdingId]: data }));
+  return data as Lot[];
+}
+
+
   async function refresh() {
     setLoading(true);
     setMsg(null);
@@ -68,21 +78,19 @@ export default function PortfolioPage() {
   }
 
   async function toggleRow(h: Holding) {
-    const next = !expanded[h.id];
-    setExpanded((p) => ({ ...p, [h.id]: next }));
-    if (!next) return;
+  const next = !expanded[h.id];
+  setExpanded((p) => ({ ...p, [h.id]: next }));
+  if (!next) return;
 
-    // fetch lots lazily
-    if (lots[h.id]) return;
+  // fetch lots if not loaded yet
+  if (!lots[h.id]) {
     try {
-      const res = await fetch(`/api/portfolio/${h.id}/lots`, { cache: "no-store" });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data?.error ?? "Erreur lots");
-      setLots((p) => ({ ...p, [h.id]: data }));
+      await fetchLots(h.id);
     } catch (e: any) {
       setMsg(e?.message ?? "Erreur lots");
     }
   }
+}
 
   async function createHolding() {
     setMsg(null);
@@ -151,39 +159,49 @@ export default function PortfolioPage() {
   }
 
   async function addLot(holdingId: string) {
-    const buy_date = prompt("Date d'achat (YYYY-MM-DD) ?");
-    if (!buy_date) return;
-    const buy_price = prompt("Prix d'achat ?");
-    if (!buy_price) return;
-    const quantity = prompt("Quantité ?");
-    if (!quantity) return;
+  const buy_date = prompt("Date d'achat (YYYY-MM-DD) ?");
+  if (!buy_date) return;
 
-    setLoading(true);
-    setMsg(null);
-    try {
-      const res = await fetch(`/api/portfolio/holdings/${holdingId}/lots`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          buy_date,
-          buy_price: Number(buy_price),
-          quantity: Number(quantity),
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data?.error ?? "Erreur ajout achat");
+  const buy_price = prompt("Prix d'achat ?");
+  if (!buy_price) return;
 
-      // refresh lots + holdings
-      setLots((p) => ({ ...p, [holdingId]: undefined as any }));
-      await refresh();
-      await toggleRow({ id: holdingId } as any);
-      setMsg("➕ Achat ajouté");
-    } catch (e: any) {
-      setMsg(e?.message ?? "Erreur");
-    } finally {
-      setLoading(false);
-    }
+  const quantity = prompt("Quantité ?");
+  if (!quantity) return;
+
+  setLoading(true);
+  setMsg(null);
+
+  try {
+    const res = await fetch(`/api/portfolio/holdings/${holdingId}/lots`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        buy_date,
+        buy_price: Number(buy_price),
+        quantity: Number(quantity),
+      }),
+    });
+
+    const data = await res.json();
+    if (!res.ok) throw new Error(data?.error ?? "Erreur ajout achat");
+
+    // 1) refresh holdings (quantité/valeur)
+    await refresh();
+
+    // 2) ensure row expanded
+    setExpanded((p) => ({ ...p, [holdingId]: true }));
+
+    // 3) refetch lots (affichage immédiat)
+    await fetchLots(holdingId);
+
+    setMsg("➕ Achat ajouté");
+  } catch (e: any) {
+    setMsg(e?.message ?? "Erreur");
+  } finally {
+    setLoading(false);
   }
+}
+
 
   useEffect(() => {
     refresh();
@@ -215,36 +233,113 @@ export default function PortfolioPage() {
       {msg && <div className="rounded-2xl bg-slate-100 px-4 py-3 text-sm">{msg}</div>}
 
       {/* Create holding */}
-      <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-        <div className="flex flex-wrap gap-2">
-          <input className="w-28 rounded-xl border border-slate-200 px-3 py-2 text-sm" placeholder="CODE (ENGI)"
-            value={code} onChange={(e) => setCode(e.target.value)} />
-          <input className="min-w-[220px] flex-1 rounded-xl border border-slate-200 px-3 py-2 text-sm" placeholder="Nom (Engie)"
-            value={name} onChange={(e) => setName(e.target.value)} />
-          <input className="w-32 rounded-xl border border-slate-200 px-3 py-2 text-sm" placeholder="Prix"
-            type="number" value={lastPrice} onChange={(e) => setLastPrice(Number(e.target.value))} />
-          <input className="w-32 rounded-xl border border-slate-200 px-3 py-2 text-sm" placeholder="Gain jour €"
-            type="number" value={dayGainAmount} onChange={(e) => setDayGainAmount(Number(e.target.value))} />
-          <input className="w-32 rounded-xl border border-slate-200 px-3 py-2 text-sm" placeholder="Gain jour %"
-            type="number" value={dayGainPct} onChange={(e) => setDayGainPct(Number(e.target.value))} />
-          <button
-            onClick={createHolding}
-            disabled={loading || !code.trim() || !name.trim()}
-            className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-60"
-          >
-            + Investissement
-          </button>
-        </div>
+      {/* Create holding */}
+<div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+  {/* Header */}
+  <div className="mb-4">
+    <h2 className="text-lg font-semibold">Ajouter une position</h2>
+    <p className="text-sm text-slate-500">
+      Crée une nouvelle ligne d’investissement dans ton portefeuille.
+    </p>
+  </div>
 
-        <div className="mt-3">
-          <input
-            className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
-            placeholder="Rechercher (code / nom)…"
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-          />
-        </div>
-      </div>
+  {/* Form */}
+  <div className="grid grid-cols-1 gap-3 md:grid-cols-12">
+    {/* Code */}
+    <div className="md:col-span-2">
+      <label className="mb-1 block text-xs font-medium text-slate-600">
+        Code
+      </label>
+      <input
+        className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
+        placeholder="ENGI"
+        value={code}
+        onChange={(e) => setCode(e.target.value)}
+      />
+    </div>
+
+    {/* Name */}
+    <div className="md:col-span-4">
+      <label className="mb-1 block text-xs font-medium text-slate-600">
+        Nom de l’actif
+      </label>
+      <input
+        className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
+        placeholder="Engie"
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+      />
+    </div>
+
+    {/* Last price */}
+    <div className="md:col-span-2">
+      <label className="mb-1 block text-xs font-medium text-slate-600">
+        Prix actuel (€)
+      </label>
+      <input
+        type="number"
+        className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
+        value={lastPrice}
+        onChange={(e) => setLastPrice(Number(e.target.value))}
+      />
+    </div>
+
+    {/* Day gain € */}
+    <div className="md:col-span-2">
+      <label className="mb-1 block text-xs font-medium text-slate-600">
+        Gain jour (€)
+      </label>
+      <input
+        type="number"
+        className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
+        value={dayGainAmount}
+        onChange={(e) => setDayGainAmount(Number(e.target.value))}
+      />
+    </div>
+
+    {/* Day gain % */}
+    <div className="md:col-span-2">
+      <label className="mb-1 block text-xs font-medium text-slate-600">
+        Gain jour (%)
+      </label>
+      <input
+        type="number"
+        className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
+        value={dayGainPct}
+        onChange={(e) => setDayGainPct(Number(e.target.value))}
+      />
+    </div>
+  </div>
+
+  {/* Actions */}
+  <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+    <button
+      onClick={createHolding}
+      disabled={loading || !code.trim() || !name.trim()}
+      className="rounded-xl bg-slate-900 px-5 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-60"
+    >
+      + Ajouter la position
+    </button>
+
+    <div className="text-xs text-slate-500">
+      Devise : EUR
+    </div>
+  </div>
+
+  {/* Search */}
+  <div className="mt-5">
+    <label className="mb-1 block text-xs font-medium text-slate-600">
+      Rechercher une position
+    </label>
+    <input
+      className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
+      placeholder="Code ou nom…"
+      value={q}
+      onChange={(e) => setQ(e.target.value)}
+    />
+  </div>
+</div>
+
 
       {/* Table */}
       <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
