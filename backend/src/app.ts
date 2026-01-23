@@ -5,6 +5,7 @@ import { requestId } from "./middlewares/requestId";
 import { errorHandler } from "./middlewares/errorHandler";
 import healthRoutes from "./modules/health/health.routes";
 import itemsRoutes from "./modules/items/items.routes";
+import portfolioRoutes from "./modules/portfolio/portfolio.routes";
 
 const app = express();
 
@@ -16,6 +17,7 @@ app.use(requestId);
 // Routes
 app.use("/api", healthRoutes);
 app.use("/api", itemsRoutes);
+app.use("/api", portfolioRoutes);
 
 // Middleware d’erreurs (⚠️ toujours en dernier)
 app.use(errorHandler);
