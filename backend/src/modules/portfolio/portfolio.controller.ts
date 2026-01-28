@@ -1,4 +1,6 @@
 import type { Request, Response } from "express";
+import * as svc from "./portfolio.service";
+
 import {
   listHoldings,
   getLotsByHolding,
@@ -30,11 +32,17 @@ export async function lots(req: Request, res: Response) {
 }
 
 export async function createHoldingCtrl(req: Request, res: Response) {
-  const parsed = createHoldingSchema.safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+  const code = String(req.body?.code ?? "").trim().toUpperCase();
+  const name = String(req.body?.name ?? "").trim();
+  const symbol = String(req.body?.symbol ?? "").trim().toUpperCase();
+  const currency = String(req.body?.currency ?? "EUR").trim().toUpperCase();
 
-  const created = await createHolding(parsed.data);
-  res.status(201).json(created);
+  if (!code || !name || !symbol) {
+    return res.status(400).json({ error: "code, name et symbol sont requis" });
+  }
+
+  const row = await svc.createHolding({ code, name, symbol, currency });
+  return res.status(201).json(row);
 }
 
 export async function updateHoldingCtrl(req: Request, res: Response) {

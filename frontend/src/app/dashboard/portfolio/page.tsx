@@ -43,12 +43,15 @@ export default function PortfolioPage() {
   const [loading, setLoading] = useState(false);
   const [q, setQ] = useState("");
 
-  // create holding
+  // create holding + first lot
   const [code, setCode] = useState("");
   const [name, setName] = useState("");
-  const [lastPrice, setLastPrice] = useState<number>(0);
-  const [dayGainAmount, setDayGainAmount] = useState<number>(0);
-  const [dayGainPct, setDayGainPct] = useState<number>(0);
+  const [firstBuyDate, setFirstBuyDate] = useState<string>(() => {
+    const d = new Date();
+    return d.toISOString().slice(0, 10); // YYYY-MM-DD
+  });
+  const [firstQty, setFirstQty] = useState<number>(1);
+  const [firstBuyPrice, setFirstBuyPrice] = useState<number>(0);
 
   const [msg, setMsg] = useState<string | null>(null);
 
@@ -92,42 +95,6 @@ export default function PortfolioPage() {
   }
 }
 
-  async function createHolding() {
-    setMsg(null);
-    const c = code.trim().toUpperCase();
-    const n = name.trim();
-    if (!c || !n) return;
-
-    setLoading(true);
-    try {
-      const res = await fetch("/api/portfolio/holdings", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          code: c,
-          name: n,
-          currency: "EUR",
-          last_price: Number(lastPrice) || 0,
-          day_gain_amount: Number(dayGainAmount) || 0,
-          day_gain_pct: Number(dayGainPct) || 0,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data?.error ?? "Erreur création");
-      setCode("");
-      setName("");
-      setLastPrice(0);
-      setDayGainAmount(0);
-      setDayGainPct(0);
-      await refresh();
-      setMsg("✅ Position créée");
-    } catch (e: any) {
-      setMsg(e?.message ?? "Erreur");
-    } finally {
-      setLoading(false);
-    }
-  }
-
   async function deleteHolding(id: string) {
     if (!confirm("Supprimer cette ligne (et ses achats) ?")) return;
     setLoading(true);
@@ -157,6 +124,69 @@ export default function PortfolioPage() {
       setLoading(false);
     }
   }
+
+  async function createPosition() {
+  setMsg(null);
+
+  const c = code.trim().toUpperCase();
+  const n = name.trim();
+  if (!c || !n) return;
+
+  if (!firstBuyDate || !(Number(firstQty) > 0) || !(Number(firstBuyPrice) > 0)) {
+    setMsg("⚠️ Renseigne date, quantité et prix d’achat.");
+    return;
+  }
+
+  setLoading(true);
+  try {
+    // 1) create holding
+    // IMPORTANT: symbol requis côté backend (ex: ENGI.PA)
+    // Temporaire: on déduit symbol = code (à remplacer ensuite par code + ".PA" ou un input symbol)
+    const symbol = c.includes(".") ? c : `${c}.PA`;
+
+    const resH = await fetch("/api/portfolio/holdings", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        code: c,
+        name: n,
+        symbol,
+        currency: "EUR",
+      }),
+    });
+
+    const holding = await resH.json();
+    if (!resH.ok) throw new Error(holding?.error ?? "Erreur création position");
+
+    // 2) create first lot
+    const resL = await fetch(`/api/portfolio/holdings/${holding.id}/lots`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        buy_date: firstBuyDate,
+        buy_price: Number(firstBuyPrice),
+        quantity: Number(firstQty),
+      }),
+    });
+
+    const lot = await resL.json();
+    if (!resL.ok) throw new Error(lot?.error ?? "Erreur création 1er achat");
+
+    // reset
+    setCode("");
+    setName("");
+    setFirstBuyDate(new Date().toISOString().slice(0, 10));
+    setFirstQty(1);
+    setFirstBuyPrice(0);
+
+    await refresh();
+    setMsg("✅ Position + premier achat créés");
+  } catch (e: any) {
+    setMsg(e?.message ?? "Erreur");
+  } finally {
+    setLoading(false);
+  }
+}
 
   async function addLot(holdingId: string) {
   const buy_date = prompt("Date d'achat (YYYY-MM-DD) ?");
@@ -233,36 +263,36 @@ export default function PortfolioPage() {
       {msg && <div className="rounded-2xl bg-slate-100 px-4 py-3 text-sm">{msg}</div>}
 
       {/* Create holding */}
-      {/* Create holding */}
-<div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-  {/* Header */}
-  <div className="mb-4">
-    <h2 className="text-lg font-semibold">Ajouter une position</h2>
-    <p className="text-sm text-slate-500">
-      Crée une nouvelle ligne d’investissement dans ton portefeuille.
-    </p>
+{/* Create holding + first lot */}
+{/* Create holding + first lot */}
+<div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+  <div className="flex flex-wrap items-start justify-between gap-4">
+    <div>
+      <h2 className="text-lg font-semibold">Ajouter une position</h2>
+      <p className="mt-1 text-sm text-slate-600">
+        Crée une nouvelle position avec le premier achat (date, quantité, prix).
+      </p>
+    </div>
+
+    <div className="text-sm text-slate-600">
+      Devise : <span className="font-semibold">EUR</span>
+    </div>
   </div>
 
-  {/* Form */}
-  <div className="grid grid-cols-1 gap-3 md:grid-cols-12">
-    {/* Code */}
+  <div className="mt-5 grid grid-cols-1 gap-3 md:grid-cols-12">
     <div className="md:col-span-2">
-      <label className="mb-1 block text-xs font-medium text-slate-600">
-        Code
-      </label>
+      <label className="mb-1 block text-sm font-medium text-slate-700">Code</label>
       <input
         className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
         placeholder="ENGI"
         value={code}
         onChange={(e) => setCode(e.target.value)}
       />
+      <p className="mt-1 text-xs text-slate-500">Ex: ENGI (on en déduira ENGI.PA).</p>
     </div>
 
-    {/* Name */}
     <div className="md:col-span-4">
-      <label className="mb-1 block text-xs font-medium text-slate-600">
-        Nom de l’actif
-      </label>
+      <label className="mb-1 block text-sm font-medium text-slate-700">Nom de l’actif</label>
       <input
         className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
         placeholder="Engie"
@@ -271,66 +301,60 @@ export default function PortfolioPage() {
       />
     </div>
 
-    {/* Last price */}
     <div className="md:col-span-2">
-      <label className="mb-1 block text-xs font-medium text-slate-600">
-        Prix actuel (€)
-      </label>
+      <label className="mb-1 block text-sm font-medium text-slate-700">Date du premier achat</label>
       <input
-        type="number"
+        type="date"
         className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
-        value={lastPrice}
-        onChange={(e) => setLastPrice(Number(e.target.value))}
+        value={firstBuyDate}
+        onChange={(e) => setFirstBuyDate(e.target.value)}
       />
     </div>
 
-    {/* Day gain € */}
     <div className="md:col-span-2">
-      <label className="mb-1 block text-xs font-medium text-slate-600">
-        Gain jour (€)
-      </label>
+      <label className="mb-1 block text-sm font-medium text-slate-700">Quantité achetée</label>
       <input
         type="number"
+        min={0}
+        step={0.0001}
         className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
-        value={dayGainAmount}
-        onChange={(e) => setDayGainAmount(Number(e.target.value))}
+        value={firstQty}
+        onChange={(e) => setFirstQty(Number(e.target.value))}
       />
     </div>
 
-    {/* Day gain % */}
     <div className="md:col-span-2">
-      <label className="mb-1 block text-xs font-medium text-slate-600">
-        Gain jour (%)
-      </label>
+      <label className="mb-1 block text-sm font-medium text-slate-700">Prix d’achat (€)</label>
       <input
         type="number"
+        min={0}
+        step={0.0001}
         className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
-        value={dayGainPct}
-        onChange={(e) => setDayGainPct(Number(e.target.value))}
+        value={firstBuyPrice}
+        onChange={(e) => setFirstBuyPrice(Number(e.target.value))}
       />
     </div>
   </div>
 
-  {/* Actions */}
-  <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+  <div className="mt-4 flex flex-wrap items-center gap-3">
     <button
-      onClick={createHolding}
-      disabled={loading || !code.trim() || !name.trim()}
-      className="rounded-xl bg-slate-900 px-5 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-60"
+      onClick={createPosition}
+      disabled={
+        loading ||
+        !code.trim() ||
+        !name.trim() ||
+        !firstBuyDate ||
+        !(Number(firstQty) > 0) ||
+        !(Number(firstBuyPrice) > 0)
+      }
+      className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-60"
     >
       + Ajouter la position
     </button>
-
-    <div className="text-xs text-slate-500">
-      Devise : EUR
-    </div>
   </div>
 
-  {/* Search */}
-  <div className="mt-5">
-    <label className="mb-1 block text-xs font-medium text-slate-600">
-      Rechercher une position
-    </label>
+  <div className="mt-6">
+    <div className="mb-2 text-sm font-medium text-slate-700">Rechercher une position</div>
     <input
       className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
       placeholder="Code ou nom…"
@@ -339,7 +363,6 @@ export default function PortfolioPage() {
     />
   </div>
 </div>
-
 
       {/* Table */}
       <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">

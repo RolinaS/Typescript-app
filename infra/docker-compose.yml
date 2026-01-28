@@ -2,12 +2,17 @@ services:
   db:
     image: postgres:16
     container_name: app-db
+    restart: unless-stopped
     environment:
       POSTGRES_DB: appdb
       POSTGRES_USER: appuser
       POSTGRES_PASSWORD: apppass
     volumes:
       - db_data:/var/lib/postgresql/data
+      - ./db:/docker-entrypoint-initdb.d
+      - ./db/init:/docker-entrypoint-initdb.d/init
+      - ./db/migrations:/docker-entrypoint-initdb.d/migrations
+      - ./db/seeds:/docker-entrypoint-initdb.d/seeds
     ports:
       - "5432:5432" # optionnel: utile pour te connecter depuis ton PC
     healthcheck:

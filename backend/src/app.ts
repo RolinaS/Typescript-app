@@ -6,6 +6,7 @@ import { errorHandler } from "./middlewares/errorHandler";
 import healthRoutes from "./modules/health/health.routes";
 import itemsRoutes from "./modules/items/items.routes";
 import portfolioRoutes from "./modules/portfolio/portfolio.routes";
+import quotesRoutes from "./modules/quotes/quotes.routes";
 
 const app = express();
 
@@ -18,6 +19,7 @@ app.use(requestId);
 app.use("/api", healthRoutes);
 app.use("/api", itemsRoutes);
 app.use("/api", portfolioRoutes);
+app.use("/api", quotesRoutes);
 
 // Middleware d’erreurs (⚠️ toujours en dernier)
 app.use(errorHandler);
