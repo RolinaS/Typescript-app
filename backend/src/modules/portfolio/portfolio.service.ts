@@ -32,13 +32,27 @@ export type LotRow = {
 };
 
 export async function listHoldings(): Promise<HoldingRow[]> {
-  // agrégation: quantité totale + valeur (qty * last_price) + gain du jour (qty * day_gain_amount)
   const { rows } = await db.query<HoldingRow>(`
     SELECT
       h.*,
-      COALESCE(SUM(l.quantity), 0)::numeric(12,2) AS quantity,
-      (COALESCE(SUM(l.quantity), 0) * h.last_price)::numeric(14,2) AS value,
-      (COALESCE(SUM(l.quantity), 0) * h.day_gain_amount)::numeric(14,2) AS day_gain_value
+
+      -- quantité totale (somme des lots)
+      COALESCE(SUM(l.quantity), 0)::numeric(14,2) AS quantity,
+
+      -- valeur investie totale = somme(qty * buy_price)
+      COALESCE(SUM(l.quantity * l.buy_price), 0)::numeric(14,2) AS value,
+
+      -- "last_price" = prix moyen pondéré d'achat = somme(qty*price)/somme(qty)
+      CASE
+        WHEN COALESCE(SUM(l.quantity), 0) = 0 THEN 0
+        ELSE (SUM(l.quantity * l.buy_price) / SUM(l.quantity))
+      END::numeric(14,2) AS last_price,
+
+      -- tant qu'on n'a pas de prix actuel, on met gain jour à 0
+      0::numeric(14,2) AS day_gain_value,
+      0::numeric(14,2) AS day_gain_amount,
+      0::numeric(7,2)  AS day_gain_pct
+
     FROM portfolio_holdings h
     LEFT JOIN portfolio_lots l ON l.holding_id = h.id
     GROUP BY h.id
