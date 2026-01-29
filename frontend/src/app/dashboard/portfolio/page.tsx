@@ -60,6 +60,10 @@ function fmtPct(v: string | number | null | undefined) {
   return `${safe.toFixed(2).replace(".", ",")} %`;
 }
 
+// ✅ Une seule définition de grille pour header + lignes "Achats"
+const LOT_GRID =
+  "grid-cols-[minmax(160px,3fr)_minmax(120px,2fr)_minmax(100px,2fr)_minmax(220px,3fr)_minmax(120px,2fr)_120px]";
+
 export default function PortfolioPage() {
   const [holdings, setHoldings] = useState<Holding[]>([]);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
@@ -280,7 +284,6 @@ export default function PortfolioPage() {
               value={code}
               onChange={(e) => setCode(e.target.value)}
             />
-            <div className="mt-2 text-xs text-slate-500">Ex: ENGI (on en déduira ENGI.PA)</div>
           </div>
 
           <div className="lg:col-span-4">
@@ -370,7 +373,6 @@ export default function PortfolioPage() {
           const avgBuy = n(h.avg_buy_price ?? h.last_price);
           const invested = n(h.invested_value ?? h.value);
 
-          // gain total : idéalement fourni par l’API
           const totalGain = n(h.total_gain_value);
           const totalPct =
             Number.isFinite(n(h.total_gain_pct))
@@ -395,17 +397,18 @@ export default function PortfolioPage() {
                   </div>
                 </div>
 
-                <div className="col-span-2 text-right font-semibold">{fmtEUR(avgBuy)}</div>
-                <div className="col-span-2 text-right">{n(h.quantity).toFixed(2).replace(".", ",")}</div>
+                <div className="col-span-2 text-right font-semibold tabular-nums">{fmtEUR(avgBuy)}</div>
+                <div className="col-span-2 text-right tabular-nums">{n(h.quantity).toFixed(2).replace(".", ",")}</div>
 
                 <div className="col-span-3 flex items-center justify-end gap-3">
-                  <span className={up ? "text-emerald-600 font-semibold" : "text-red-600 font-semibold"}>
-                    {totalGain >= 0 ? "+" : ""}{fmtEUR(totalGain)}
+                  <span className={up ? "text-emerald-600 font-semibold tabular-nums" : "text-red-600 font-semibold tabular-nums"}>
+                    {totalGain >= 0 ? "+" : ""}
+                    {fmtEUR(totalGain)}
                   </span>
 
                   <span
                     className={[
-                      "rounded-xl px-3 py-1 text-sm font-semibold",
+                      "rounded-xl px-3 py-1 text-sm font-semibold tabular-nums",
                       up ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-700",
                     ].join(" ")}
                   >
@@ -413,7 +416,7 @@ export default function PortfolioPage() {
                   </span>
                 </div>
 
-                <div className="col-span-2 text-right font-semibold">{fmtEUR(invested)}</div>
+                <div className="col-span-2 text-right font-semibold tabular-nums">{fmtEUR(invested)}</div>
               </button>
 
               {expanded[h.id] && (
@@ -434,12 +437,20 @@ export default function PortfolioPage() {
                     </button>
                   </div>
 
-                  <div className="grid grid-cols-12 gap-3 border-b border-slate-200 pb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    <div className="col-span-3">Date d'achat</div>
-                    <div className="col-span-2 text-right">Prix d'achat</div>
-                    <div className="col-span-2 text-right">Quantité</div>
-                    <div className="col-span-3 text-right">Gain total</div>
-                    <div className="col-span-2 text-right">Valeur</div>
+                  {/* ✅ Header aligné avec les lignes via LOT_GRID */}
+                  <div
+                    className={[
+                      "grid",
+                      LOT_GRID,
+                      "items-center gap-3 border-b border-slate-200 pb-2 text-xs font-semibold uppercase tracking-wide text-slate-500",
+                    ].join(" ")}
+                  >
+                    <div>Date d'achat</div>
+                    <div className="text-right">Prix d'achat</div>
+                    <div className="text-right">Quantité</div>
+                    <div className="text-right">Gain total</div>
+                    <div className="text-right">Valeur</div>
+                    <div className="text-right">Actions</div>
                   </div>
 
                   <LotsBlock
@@ -475,34 +486,43 @@ function LotsBlock({
   return (
     <div className="divide-y divide-slate-100">
       {lots.map((l) => {
-        const up = n(l.total_gain_pct) >= 0;
+        const pct = n(l.total_gain_pct);
+        const up = pct >= 0;
         return (
-          <div key={l.id} className="grid grid-cols-12 gap-3 py-3 text-sm">
-            <div className="col-span-3">{new Date(l.buy_date).toLocaleDateString("fr-FR")}</div>
-            <div className="col-span-2 text-right">{fmtEUR(l.buy_price)}</div>
-            <div className="col-span-2 text-right">{n(l.quantity).toFixed(2).replace(".", ",")}</div>
+          <div
+            key={l.id}
+            className={["grid", LOT_GRID, "items-center gap-3 py-3 text-sm"].join(" ")}
+          >
+            <div>{new Date(l.buy_date).toLocaleDateString("fr-FR")}</div>
 
-            <div className="col-span-3 text-right">
-              <span className={up ? "text-emerald-700 font-semibold" : "text-red-700 font-semibold"}>
-                {n(l.total_gain_value) >= 0 ? "+" : ""}{fmtEUR(l.total_gain_value)}
+            <div className="text-right tabular-nums">{fmtEUR(l.buy_price)}</div>
+            <div className="text-right tabular-nums">{Number(l.quantity).toFixed(2).replace(".", ",")}</div>
+
+            <div className="text-right">
+              <span className={up ? "text-emerald-700 font-semibold tabular-nums" : "text-red-700 font-semibold tabular-nums"}>
+                {n(l.total_gain_value) >= 0 ? "+" : ""}
+                {fmtEUR(l.total_gain_value)}
               </span>
+
               <span
                 className={[
-                  "ml-3 rounded-xl px-2 py-1 text-xs font-semibold",
+                  "ml-3 inline-flex items-center rounded-xl px-2 py-1 text-xs font-semibold tabular-nums",
                   up ? "bg-emerald-100 text-emerald-800" : "bg-red-100 text-red-800",
                 ].join(" ")}
               >
-                {up ? "↑" : "↓"} {fmtPct(l.total_gain_pct)}
+                {up ? "↑" : "↓"} {fmtPct(pct)}
               </span>
             </div>
 
-            <div className="col-span-2 flex items-center justify-end gap-3">
-              <div className="text-right font-semibold">{fmtEUR(l.current_value)}</div>
+            <div className="text-right font-semibold tabular-nums">{fmtEUR(l.current_value)}</div>
+
+            {/* ✅ Colonne Actions FIXE et alignée */}
+            <div className="justify-self-end">
               <button
+                type="button"
                 disabled={disabled}
                 onClick={() => onDeleteLot(l.id)}
-                className="rounded-xl border border-red-200 bg-white px-3 py-2 text-xs font-medium text-red-700 hover:bg-red-50 disabled:opacity-60"
-                title="Supprimer cet achat"
+                className="rounded-xl border border-red-200 bg-white px-4 py-2 text-sm text-red-700 hover:bg-red-50 disabled:opacity-60"
               >
                 Supprimer
               </button>
