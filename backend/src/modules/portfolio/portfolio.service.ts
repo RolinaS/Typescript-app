@@ -2,27 +2,21 @@ import { db } from "../../config/db";
 
 export type HoldingRow = {
   id: string;
-  code: string;
+  symbol: string;  // ex: ENGI.PA
+  code: string;    // ex: ENGI (optionnel)
   name: string;
   currency: string;
 
-  // On réutilise ces champs pour éviter de casser le front :
-  // last_price = prix ACTUEL (market)
-  last_price: string;
-
-  // day_gain_amount = gain du jour par action (prix - previous_close)
-  day_gain_amount: string;
-
-  // day_gain_pct = gain du jour en %
-  day_gain_pct: string;
-
-  created_at: string;
-  updated_at: string;
-
   // agrégats
-  quantity: string;     // somme lots
-  value: string;        // montant investi total
-  day_gain_value: string; // gain du jour total = (prix - prevClose) * qty
+  quantity: string;          // Σ lots.qty
+  avg_buy_price: string;     // Σ(qty*buy)/Σ(qty)
+  invested_value: string;    // Σ(qty*buy)
+
+  // marché (optionnel, si tu stockes en DB)
+  market_price: string;      // dernier prix
+  previous_close: string;    // clôture J-1
+  day_gain_value: string;    // gain du jour en €
+  day_gain_pct: string;      // gain du jour en %
 };
 
 export type LotRow = {
@@ -46,74 +40,71 @@ export async function listHoldings(): Promise<HoldingRow[]> {
     SELECT
       h.id,
       h.code,
+      h.symbol,
       h.name,
       h.currency,
-      h.created_at,
-      h.updated_at,
 
-      -- quantité totale
+      -- Quantité totale
       COALESCE(SUM(l.quantity), 0)::numeric(14,2) AS quantity,
 
-      -- montant investi total
-      COALESCE(SUM(l.quantity * l.buy_price), 0)::numeric(14,2) AS value,
+      -- Valeur investie
+      COALESCE(SUM(l.quantity * l.buy_price), 0)::numeric(14,2) AS invested_value,
 
-      -- last_price = prix actuel (market)
-      COALESCE(q.price, 0)::numeric(14,2) AS last_price,
-
-      -- gain du jour par action = prix - clôture veille
-      (COALESCE(q.price, 0) - COALESCE(q.previous_close, 0))::numeric(14,2) AS day_gain_amount,
-
-      -- gain du jour total = (prix - prevClose) * quantité totale
-      (
-        (COALESCE(q.price, 0) - COALESCE(q.previous_close, 0))
-        * COALESCE(SUM(l.quantity), 0)
-      )::numeric(14,2) AS day_gain_value,
-
-      -- gain du jour % = (prix - prevClose) / prevClose * 100
+      -- Prix d’achat moyen pondéré
       CASE
-        WHEN COALESCE(q.previous_close, 0) = 0 THEN 0
-        ELSE ((q.price - q.previous_close) / q.previous_close) * 100
-      END::numeric(7,2) AS day_gain_pct
+        WHEN COALESCE(SUM(l.quantity), 0) = 0 THEN 0
+        ELSE SUM(l.quantity * l.buy_price) / SUM(l.quantity)
+      END::numeric(14,2) AS avg_buy_price,
+
+      -- Prix marché
+      COALESCE(m.price, 0)::numeric(14,2) AS market_price,
+
+      -- 🔥 GAIN TOTAL (€)
+      COALESCE(
+        SUM(
+          (COALESCE(m.price,0) - l.buy_price) * l.quantity
+        ),
+        0
+      )::numeric(14,2) AS total_gain_value,
+
+      -- 🔥 GAIN TOTAL (%)
+      CASE
+        WHEN COALESCE(SUM(l.quantity * l.buy_price),0) = 0 THEN 0
+        ELSE (
+          SUM((COALESCE(m.price,0) - l.buy_price) * l.quantity)
+          / SUM(l.quantity * l.buy_price)
+        ) * 100
+      END::numeric(7,2) AS total_gain_pct
 
     FROM portfolio_holdings h
     LEFT JOIN portfolio_lots l ON l.holding_id = h.id
-    LEFT JOIN market_quotes q ON q.symbol = h.symbol
-    GROUP BY h.id, q.price, q.previous_close
+    LEFT JOIN market_quotes m ON m.symbol = h.symbol
+    GROUP BY h.id, m.price
     ORDER BY h.name ASC;
   `);
 
   return rows;
 }
 
+
 // ========== Lots (détails) ==========
 export async function getLotsByHolding(holdingId: string): Promise<LotRow[]> {
   const { rows } = await db.query<LotRow>(`
     SELECT
-      l.id,
-      l.holding_id,
-      l.buy_date,
-      l.buy_price,
-      l.quantity,
-      l.created_at,
-      l.updated_at,
+      l.*,
 
       (l.quantity * l.buy_price)::numeric(14,2) AS total_cost,
+      (COALESCE(m.price,0) * l.quantity)::numeric(14,2) AS current_value,
+      ((COALESCE(m.price,0) * l.quantity) - (l.quantity * l.buy_price))::numeric(14,2) AS total_gain_value,
 
-      -- valeur actuelle du lot = qty * prix actuel
-      (l.quantity * COALESCE(q.price, 0))::numeric(14,2) AS current_value,
-
-      -- gain total du lot = (prix actuel - prix achat) * qty
-      ((l.quantity * COALESCE(q.price, 0)) - (l.quantity * l.buy_price))::numeric(14,2) AS total_gain_value,
-
-      -- gain total % du lot
       CASE
-        WHEN (l.buy_price) = 0 THEN 0
-        ELSE (((COALESCE(q.price, 0) - l.buy_price) / l.buy_price) * 100)
+        WHEN (l.quantity * l.buy_price) = 0 THEN 0
+        ELSE ((((COALESCE(m.price,0) * l.quantity) - (l.quantity * l.buy_price)) / (l.quantity * l.buy_price)) * 100)
       END::numeric(7,2) AS total_gain_pct
 
     FROM portfolio_lots l
     JOIN portfolio_holdings h ON h.id = l.holding_id
-    LEFT JOIN market_quotes q ON q.symbol = h.symbol
+    LEFT JOIN market_quotes m ON m.symbol = h.symbol
     WHERE l.holding_id = $1
     ORDER BY l.buy_date DESC;
   `, [holdingId]);
